@@ -64,8 +64,8 @@ def scan():
 
     <script>
     function onScanSuccess(decodedText) {
-        document.getElementById("cod").value = decodedText;
-        document.getElementById("formular").submit();
+    alert(decodedText);
+    document.getElementById("cod").value = decodedText;
     }
 
     let scanner = new Html5QrcodeScanner(
