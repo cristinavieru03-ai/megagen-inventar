@@ -51,17 +51,34 @@ def upload():
 def scan():
 
     return """
-    <h2>Scanare manuala</h2>
+    <h2>Scanare QR</h2>
 
-    <form action="/cauta" method="post">
-        <input type="text" name="cod" style="width:300px">
+    <script src="https://unpkg.com/html5-qrcode"></script>
+
+    <div id="reader" style="width:350px"></div>
+
+    <form id="formular" action="/cauta" method="post">
+        <input type="text" id="cod" name="cod" style="width:300px">
         <button type="submit">Scaneaza</button>
     </form>
+
+    <script>
+    function onScanSuccess(decodedText) {
+        document.getElementById("cod").value = decodedText;
+        document.getElementById("formular").submit();
+    }
+
+    let scanner = new Html5QrcodeScanner(
+        "reader",
+        { fps: 10, qrbox: 250 }
+    );
+
+    scanner.render(onScanSuccess);
+    </script>
 
     <br>
     <a href="/">Acasa</a>
     """
-
 
 @app.route("/cauta", methods=["POST"])
 def cauta():
