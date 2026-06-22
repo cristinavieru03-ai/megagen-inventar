@@ -1,6 +1,6 @@
 from flask import Flask, request, send_file
 import pandas as pd
-import os
+import re
 
 app = Flask(__name__)
 
@@ -10,24 +10,26 @@ faptic = {}
 @app.route("/")
 def home():
 
-    html = """
+    return f"""
     <h1>MegaGen Inventar</h1>
 
     <form action="/upload" method="post" enctype="multipart/form-data">
-        <input type="file" name="fisier">
+        <input type="file" name="fisier" required>
         <button type="submit">Import Excel</button>
     </form>
 
-    <br>
+    <br><br>
+
     <a href="/scan">SCANARE</a>
 
-<br><br>
-<a href="/raport">VEZI RAPORT</a>
+    <br><br>
 
-    <p>Produse importate: """ + str(len(produse)) + """</p>
+    <a href="/raport">VEZI RAPORT</a>
+
+    <br><br>
+
+    Produse importate: {len(produse)}
     """
-
-    return html
 
 
 @app.route("/upload", methods=["POST"])
@@ -38,6 +40,8 @@ def upload():
     fisier = request.files["fisier"]
 
     df = pd.read_excel(fisier)
+
+    df.columns = df.columns.str.strip()
 
     produse = df.to_dict("records")
 
@@ -51,43 +55,70 @@ def upload():
 def scan():
 
     return """
-    <h2>Scanare QR</h2>
+    <h2>Scanare QR / DataMatrix</h2>
 
     <script src="https://unpkg.com/html5-qrcode"></script>
 
-    <div id="reader" style="width:350px"></div>
+    <div id="reader" style="width:400px"></div>
 
     <form id="formular" action="/cauta" method="post">
-        <input type="text" id="cod" name="cod" style="width:300px">
-        <button type="submit">Scaneaza</button>
+        <input type="hidden" id="cod" name="cod">
     </form>
 
     <script>
+
+    let scanat = false;
+
     function onScanSuccess(decodedText) {
-    alert(decodedText);
-    document.getElementById("cod").value = decodedText;
+
+        if(scanat) return;
+
+        scanat = true;
+
+        document.getElementById("cod").value = decodedText;
+
+        document.getElementById("formular").submit();
     }
 
     let scanner = new Html5QrcodeScanner(
         "reader",
-        { fps: 10, qrbox: 250 }
+        {
+            fps: 10,
+            qrbox: 250
+        }
     );
 
     scanner.render(onScanSuccess);
+
     </script>
 
     <br>
+
     <a href="/">Acasa</a>
     """
+
 
 @app.route("/cauta", methods=["POST"])
 def cauta():
 
-    cod = request.form["cod"].strip()
+    text_scanat = request.form["cod"].strip()
+
+    cod = ""
+
+    match = re.search(r"240([A-Za-z0-9]+)", text_scanat)
+
+    if match:
+        cod = match.group(1)
+    else:
+        cod = text_scanat
+
+    cod = cod.strip()
 
     for p in produse:
 
-        if str(p.get("COD","")).strip() == cod:
+        cod_excel = str(p.get("COD", "")).strip()
+
+        if cod_excel.upper() == cod.upper():
 
             if cod not in faptic:
                 faptic[cod] = 0
@@ -95,59 +126,67 @@ def cauta():
             faptic[cod] += 1
 
             return f"""
-            <h2>Produs gasit</h2>
+            <h2 style='color:green'>PRODUS GASIT</h2>
 
             <p><b>Cod:</b> {cod}</p>
             <p><b>Denumire:</b> {p.get('DENUMIRE','')}</p>
-            <p><b>Scriptic:</b> {p.get('Stoc Scriptic','')}</p>
             <p><b>Faptic:</b> {faptic[cod]}</p>
 
-            <a href="/scan">Scanare urmatoare</a>
+            <script>
+            setTimeout(function(){{
+                window.location='/scan';
+            }},1500);
+            </script>
             """
 
-    return """
-    <h2>Produs negasit</h2>
-    <a href="/scan">Inapoi</a>
+    return f"""
+    <h2 style='color:red'>PRODUS NEGASIT</h2>
+
+    <p><b>Text scanat:</b></p>
+
+    <pre>{text_scanat}</pre>
+
+    <p><b>Cod extras:</b> {cod}</p>
+
+    <script>
+    setTimeout(function(){{
+        window.location='/scan';
+    }},3000);
+    </script>
     """
+
+
 @app.route("/raport")
 def raport():
 
     html = """
-    <h1>Raport inventar</h1>
+    <h1>Raport Inventar</h1>
 
-    <table border="1">
+    <table border="1" cellpadding="5">
     <tr>
-        <th>Cod</th>
-        <th>Denumire</th>
-        <th>Scriptic</th>
-        <th>Faptic</th>
-        <th>Diferenta</th>
+        <th>COD</th>
+        <th>DENUMIRE</th>
+        <th>FAPTIC</th>
     </tr>
     """
 
     for cod, cant in faptic.items():
 
         denumire = ""
-        scriptic = 0
 
         for p in produse:
 
-            if str(p.get("COD","")).strip() == cod:
+            if str(p.get("COD","")).strip().upper() == cod.upper():
 
                 denumire = str(p.get("DENUMIRE",""))
-                scriptic = int(p.get("Stoc Scriptic",0))
 
                 break
-
-        diferenta = cant - scriptic
 
         html += f"""
         <tr>
             <td>{cod}</td>
             <td>{denumire}</td>
-            <td>{scriptic}</td>
             <td>{cant}</td>
-            <td>{diferenta}</td>
         </tr>
         """
 
@@ -156,14 +195,16 @@ def raport():
 
     <br><br>
 
-    <a href='/export'>EXPORT EXCEL</a>
+    <a href="/export">EXPORT EXCEL</a>
 
     <br><br>
 
-    <a href='/'>Acasa</a>
+    <a href="/">Acasa</a>
     """
 
     return html
+
+
 @app.route("/export")
 def export():
 
@@ -172,23 +213,19 @@ def export():
     for cod, cant in faptic.items():
 
         denumire = ""
-        scriptic = 0
 
         for p in produse:
 
-            if str(p.get("COD","")).strip() == cod:
+            if str(p.get("COD","")).strip().upper() == cod.upper():
 
                 denumire = str(p.get("DENUMIRE",""))
-                scriptic = int(p.get("Stoc Scriptic",0))
 
                 break
 
         raport.append({
             "COD": cod,
             "DENUMIRE": denumire,
-            "SCRIPTIC": scriptic,
-            "FAPTIC": cant,
-            "DIFERENTA": cant - scriptic
+            "FAPTIC": cant
         })
 
     df = pd.DataFrame(raport)
@@ -198,5 +235,7 @@ def export():
     df.to_excel(fisier, index=False)
 
     return send_file(fisier, as_attachment=True)
+
+
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000, debug=True)
+    app.run(host="0.0.0.0", port=5000)
